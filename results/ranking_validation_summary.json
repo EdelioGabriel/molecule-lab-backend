@@ -1,0 +1,46 @@
+{
+  "n_molecules": 19,
+  "n_successful_simulations": 19,
+  "n_failed_simulations": 0,
+  "ranking_difference": 0.26785714285714285,
+  "ranking_similarity": 0.7321428571428571,
+  "n_total_pairs": 171,
+  "n_comparable_pairs": 168,
+  "n_correct_pairs": 123,
+  "n_wrong_pairs": 45,
+  "n_ignored_pairs": 3,
+  "pairwise_accuracy": 0.7321428571428571,
+  "spearman_correlation": null,
+  "spearman_pvalue": null,
+  "kendall_tau": null,
+  "kendall_pvalue": null,
+  "classification_accuracy": 0.5263157894736842,
+  "rank_position_accuracy": 0.47368421052631576,
+  "league_table_accuracy": 0.21052631578947367,
+  "league_metrics": {
+    "n_ranked_molecules": 19,
+    "mean_abs_rank_difference": 3.473684210526316,
+    "median_abs_rank_difference": 3.0,
+    "max_abs_rank_difference": 14,
+    "top_3_overlap": 0.3333333333333333,
+    "top_5_overlap": 0.6,
+    "bottom_3_overlap": 0.6666666666666666,
+    "bottom_5_overlap": 0.8,
+    "exact_position_matches": 4,
+    "near_position_matches_le2": 9
+  },
+  "error_metrics": {
+    "n_error_valid": 0,
+    "mean_absolute_error": null,
+    "median_absolute_error": null,
+    "root_mean_squared_error": null,
+    "mean_percent_error": null,
+    "mean_absolute_percent_error": null,
+    "median_absolute_percent_error": null,
+    "max_absolute_percent_error": null,
+    "min_absolute_percent_error": null
+  },
+  "reference_types_found": [
+    "bond_dissociation_energy"
+  ]
+}

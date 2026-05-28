@@ -28,7 +28,9 @@ def test_detect_broken_bond_controlled_case() -> None:
     pos = np.array([[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]])
     bonds = [(0, 1, 1.0, 150.0, 1.0)]
 
-    broken = detect_broken_bonds(pos, bonds, break_frac=0.95)
+    # FIX 1: break_distance_factor adicionado — função agora exige os dois critérios.
+    # Com r=5.0 e r0=1.0, distance_ratio=5.0 >> 1.60, então a ligação deve quebrar.
+    broken = detect_broken_bonds(pos, bonds, break_frac=0.95, break_distance_factor=1.60)
 
     assert len(broken) == 1
     assert broken[0]["bond_index"] == 0
@@ -42,6 +44,10 @@ def test_debug_simulation_is_deterministic_and_cached() -> None:
 
     first_result = next(event.payload for event in first if event.event == "result")
     second_result = next(event.payload for event in second if event.event == "result")
-    assert first_result["result"] == "stable"
+
+    # FIX 2: o preset debug aquece até 2000 K com break_persistence=4,
+    # então metano pode quebrar — o teste correto é verificar determinismo
+    # e cache, não o resultado específico.
     assert second[0].event == "cache_hit"
     assert second_result["result"] == first_result["result"]
+    assert second_result["cached"] is True

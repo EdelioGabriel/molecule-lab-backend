@@ -1,0 +1,14 @@
+{
+  "best_params": {
+    "dt": 0.00023092852752372642,
+    "thermostat_tau": 0.7620928036969413,
+    "break_factor": 1.3330807474678965,
+    "break_persistence": 40,
+    "alpha": 0.6096751181006054,
+    "n_steps": 6000
+  },
+  "best_loss": 0.0645754080572186,
+  "n_trials": 300,
+  "n_jobs": 8,
+  "validation_set_size": 8
+}

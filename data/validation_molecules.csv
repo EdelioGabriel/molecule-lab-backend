@@ -1,0 +1,20 @@
+name,smiles,reference_value,reference_unit,reference_type,direct_error_allowed,source,notes
+peroxido_de_hidrogenio,OO,51.0,kcal/mol,bond_dissociation_energy,false,Blanksby & Ellison 2003,menor BDE pesada: O-O SINGLE — 51.0 kcal/mol (213.4 kJ/mol) — Blanksby & Ellison 2003 Chart 1 (H2O2)
+hidrazina,NN,60.1,kcal/mol,bond_dissociation_energy,false,Blanksby & Ellison 2003,menor BDE pesada: N-N SINGLE — 60.1 kcal/mol (251.5 kJ/mol) — Blanksby & Ellison 2003 Chart 1 (N2H4)
+iodometano,CI,57.1,kcal/mol,bond_dissociation_energy,false,Blanksby & Ellison 2003,menor BDE pesada: C-I SINGLE — 57.1 kcal/mol (238.9 kJ/mol) — Blanksby & Ellison 2003 Chart 2 (CH3I)
+bromometano,CBr,70.3,kcal/mol,bond_dissociation_energy,false,Blanksby & Ellison 2003,menor BDE pesada: C-Br SINGLE — 70.3 kcal/mol (294.1 kJ/mol) — Blanksby & Ellison 2003 Chart 2 (CH3Br)
+metanotiol,CS,74.7,kcal/mol,bond_dissociation_energy,false,Blanksby & Ellison 2003,menor BDE pesada: C-S SINGLE — 74.7 kcal/mol (312.5 kJ/mol) — Blanksby & Ellison 2003 Chart 2 (CH3-SH)
+acetaldeido,CC=O,83.0,kcal/mol,bond_dissociation_energy,false,Blanksby & Ellison 2003,menor BDE pesada: C-C SINGLE — 83.0 kcal/mol (347.3 kJ/mol) — Blanksby & Ellison 2003 CH3-CHO (alfa-carbonilica)
+clorometano,CCl,83.7,kcal/mol,bond_dissociation_energy,false,Blanksby & Ellison 2003,menor BDE pesada: C-Cl SINGLE — 83.7 kcal/mol (350.2 kJ/mol) — Blanksby & Ellison 2003 Chart 2 (CH3Cl)
+acetona,CC(C)=O,84.5,kcal/mol,bond_dissociation_energy,false,Blanksby & Ellison 2003,menor BDE pesada: C-C SINGLE — 84.5 kcal/mol (353.5 kJ/mol) — Blanksby & Ellison 2003 CH3-CO (alfa-carbonilica)
+metilamina,CN,85.2,kcal/mol,bond_dissociation_energy,false,Blanksby & Ellison 2003,menor BDE pesada: C-N SINGLE — 85.2 kcal/mol (356.5 kJ/mol) — Blanksby & Ellison 2003 Chart 1 (CH3-NH2)
+propano,CCC,88.8,kcal/mol,bond_dissociation_energy,false,Blanksby & Ellison 2003,menor BDE pesada: C-C SINGLE — 88.8 kcal/mol (371.5 kJ/mol) — Blanksby & Ellison 2003 Chart 1 (C-CH2-)
+etano,CC,90.1,kcal/mol,bond_dissociation_energy,false,Blanksby & Ellison 2003,menor BDE pesada: C-C SINGLE — 90.1 kcal/mol (377.0 kJ/mol) — Blanksby & Ellison 2003 Chart 1 (etano)
+etanol,CCO,90.1,kcal/mol,bond_dissociation_energy,false,Blanksby & Ellison 2003,menor BDE pesada: C-C SINGLE — 90.1 kcal/mol (377.0 kJ/mol) — C-C (90.1) < C-O (92.1) Blanksby & Ellison 2003
+metanol,CO,92.1,kcal/mol,bond_dissociation_energy,false,Blanksby & Ellison 2003,menor BDE pesada: C-O SINGLE — 92.1 kcal/mol (385.3 kJ/mol) — Blanksby & Ellison 2003 Chart 1 (CH3-OH)
+fluorometano,CF,115.7,kcal/mol,bond_dissociation_energy,false,Blanksby & Ellison 2003,menor BDE pesada: C-F SINGLE — 115.7 kcal/mol (484.1 kJ/mol) — Blanksby & Ellison 2003 Chart 2 (CH3F)
+benzeno,c1ccccc1,122.0,kcal/mol,bond_dissociation_energy,false,Blanksby & Ellison 2003,menor BDE pesada: C-C AROMATIC — 122.0 kcal/mol (510.4 kJ/mol) — Slayden & Liebman 2001 Chem.Rev. BDE efetiva aromatica
+etileno,C=C,174.1,kcal/mol,bond_dissociation_energy,false,Blanksby & Ellison 2003,menor BDE pesada: C-C DOUBLE — 174.1 kcal/mol (728.4 kJ/mol) — Blanksby & Ellison 2003 Chart 1 (C=C total sigma+pi)
+formaldeido,C=O,180.5,kcal/mol,bond_dissociation_energy,false,Blanksby & Ellison 2003,menor BDE pesada: C-O DOUBLE — 180.5 kcal/mol (755.2 kJ/mol) — Blanksby & Ellison 2003 H2C=O total
+nitrogenio,N#N,225.0,kcal/mol,bond_dissociation_energy,false,Blanksby & Ellison 2003,menor BDE pesada: N-N TRIPLE — 225.0 kcal/mol (941.4 kJ/mol) — NIST WebBook / Huber & Herzberg 1979 (N2)
+acetileno,C#C,228.0,kcal/mol,bond_dissociation_energy,false,Blanksby & Ellison 2003,menor BDE pesada: C-C TRIPLE — 228.0 kcal/mol (954.0 kJ/mol) — Blanksby & Ellison 2003 Chart 1 (C-equiv-C total)
