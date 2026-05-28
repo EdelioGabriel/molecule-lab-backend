@@ -51,3 +51,20 @@ def test_debug_simulation_is_deterministic_and_cached() -> None:
     assert second[0].event == "cache_hit"
     assert second_result["result"] == first_result["result"]
     assert second_result["cached"] is True
+
+
+def test_bde_simulation_metadata_and_cache_key() -> None:
+    _RESULT_CACHE.clear()
+
+    first = list(run_simulation("OO", preset_name="debug", seed=42))
+    second = list(run_simulation("OO", preset_name="debug", seed=42))
+    different_seed = list(run_simulation("OO", preset_name="debug", seed=43))
+
+    first_result = next(event.payload for event in first if event.event == "result")
+
+    assert first_result["model"] == "bde_ranking_md_v1"
+    assert "bde" in first_result["broken_bonds"][0]
+    assert "simulated_break_temperature" in first_result
+    assert second[0].event == "cache_hit"
+    assert next(event.payload for event in second if event.event == "result")["cached"] is True
+    assert different_seed[0].event == "progress"

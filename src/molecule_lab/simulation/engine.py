@@ -1,33 +1,50 @@
-"""High-level molecular dynamics runner and progress event generation."""
+"""High-level molecular dynamics runner and progress event generation.
+
+This public runner keeps the FastAPI/SSE contract stable while using the
+BDE-calibrated MD model added by the validation PR.
+"""
 
 from __future__ import annotations
 
+import hashlib
+import json
 import time
 from collections import OrderedDict
 from collections.abc import Iterator
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal
 
 import numpy as np
 
 from molecule_lab.core.config import settings
 from molecule_lab.core.errors import SimulationError
-from molecule_lab.simulation.detection import detect_broken_bonds
-from molecule_lab.simulation.forces import VerletList, forces_and_energy
-from molecule_lab.simulation.integrator import (
-    baoab_step,
+from molecule_lab.simulation.bde_loader import load_bde_table
+from molecule_lab.simulation.detection_ import detect_broken_bonds
+from molecule_lab.simulation.forces_ import forces_and_energy
+from molecule_lab.simulation.integrator_ import (
     initialize_velocities,
     kinetic_temperature,
-    remove_angular_momentum,
-    remove_linear_momentum,
-    temperature_ramp,
+    target_temperature_ramp,
+    velocity_verlet_step,
 )
 from molecule_lab.simulation.parameters import SimulationPreset, get_preset
-from molecule_lab.simulation.topology import build_molecule, build_topology
+from molecule_lab.simulation.parameters_ import (
+    NO_BREAK_MARGIN,
+    SAVE_EVERY,
+    TEMPERATURE_END,
+    TEMPERATURE_START,
+)
+from molecule_lab.simulation.topology_ import build_molecule, build_topology
 
 
 ResultKind = Literal["stable", "break"]
 EventKind = Literal["progress", "result", "cache_hit"]
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_BDE_PATH = _PROJECT_ROOT / "data" / "bde_results.csv"
+_OPTUNA_PATH = _PROJECT_ROOT / "data" / "optuna_resultado.json"
+_MODEL_NAME = "bde_ranking_md_v1"
 
 
 @dataclass(frozen=True)
@@ -36,7 +53,7 @@ class SimulationEvent:
     payload: dict[str, Any]
 
 
-_RESULT_CACHE: OrderedDict[tuple[str, str, int], dict[str, Any]] = OrderedDict()
+_RESULT_CACHE: OrderedDict[tuple[str, str, int, str], dict[str, Any]] = OrderedDict()
 
 
 def run_simulation(
@@ -44,7 +61,10 @@ def run_simulation(
 ) -> Iterator[SimulationEvent]:
     preset = get_preset(preset_name)
     run_seed = preset.seed if seed is None else seed
-    cache_key = (smiles, preset.name, run_seed)
+    runtime = _runtime_params(preset)
+    model_signature = _model_signature(runtime)
+    cache_key = (smiles, preset.name, run_seed, model_signature)
+
     cached = _cache_get(cache_key)
     if cached is not None:
         yield SimulationEvent(
@@ -53,14 +73,17 @@ def run_simulation(
                 "smiles": smiles,
                 "preset": preset.name,
                 "seed": run_seed,
+                "model": _MODEL_NAME,
+                "model_signature": model_signature,
                 "message": "Resultado recuperado do cache em memória.",
             },
         )
         yield SimulationEvent("result", {**cached, "cached": True})
         return
 
+    bde_table = _load_bde_table()
     final_payload: dict[str, Any] | None = None
-    for event in _run_uncached(smiles, preset, run_seed):
+    for event in _run_uncached(smiles, preset, run_seed, runtime, bde_table):
         if event.event == "result":
             final_payload = event.payload
         yield event
@@ -69,66 +92,94 @@ def run_simulation(
 
 
 def _run_uncached(
-    smiles: str, preset: SimulationPreset, seed: int
+    smiles: str,
+    preset: SimulationPreset,
+    seed: int,
+    runtime: dict[str, float | int],
+    bde_table: dict,
 ) -> Iterator[SimulationEvent]:
     start = time.perf_counter()
     try:
         mol = build_molecule(smiles, seed=seed)
-        topology = build_topology(mol)
+        pos, masses, radii, symbols, bonds, _neighbors, one_three, bonded_pairs = (
+            build_topology(mol)
+        )
     except Exception as exc:
         if isinstance(exc, SimulationError):
             raise
         raise SimulationError(str(exc)) from exc
 
-    pos = topology.pos.copy()
-    active_shake_bonds = topology.shake_bonds if preset.use_shake else []
-    vlist = VerletList(preset.r_cut, preset.r_skin)
-    vlist.build(pos, topology, preset)
+    temperature_start = float(runtime["temperature_start"])
+    temperature_end = float(runtime["temperature_end"])
+    n_steps = int(runtime["n_steps"])
+    dt = float(runtime["dt"])
+    thermostat_tau = float(runtime["thermostat_tau"])
+    break_factor = float(runtime["break_factor"])
+    break_persistence = int(runtime["break_persistence"])
+    alpha = float(runtime["alpha"])
+    event_every = max(1, int(runtime["event_every"]))
 
-    vel = initialize_velocities(topology.masses, preset.temperature_start, seed=seed)
-    vel = remove_angular_momentum(pos, vel, topology.masses)
-    forces, potential, atom_energy = forces_and_energy(pos, topology, vlist, preset)
-    rng = np.random.default_rng(seed)
-
-    def force_fn(current_pos: np.ndarray) -> tuple[np.ndarray, float, np.ndarray]:
-        if vlist.needs_rebuild(current_pos):
-            vlist.build(current_pos, topology, preset)
-        return forces_and_energy(current_pos, topology, vlist, preset)
+    vel = initialize_velocities(masses, temperature_start, seed=seed)
+    forces, potential = forces_and_energy(
+        pos, radii, symbols, bonds, one_three, bonded_pairs
+    )
 
     temperatures: list[float] = []
     target_temperatures: list[float] = []
-    persist_count = {idx: 0 for idx in range(len(topology.bonds))}
-    for step in range(preset.n_steps):
-        target_temperature = temperature_ramp(
+    persist_count = {idx: 0 for idx in range(len(bonds))}
+    for step in range(n_steps):
+        target_temperature = target_temperature_ramp(
             step,
-            preset.n_steps,
-            preset.temperature_start,
-            preset.temperature_end,
+            n_steps,
+            temperature_start,
+            temperature_end,
         )
-        pos, vel, forces, potential, atom_energy = baoab_step(
+
+        def force_fn(
+            current_pos: np.ndarray,
+            current_radii,
+            current_symbols,
+            current_bonds,
+            current_one_three,
+            current_bonded_pairs,
+        ):
+            return forces_and_energy(
+                current_pos,
+                current_radii,
+                current_symbols,
+                current_bonds,
+                current_one_three,
+                current_bonded_pairs,
+            )
+
+        pos, vel, forces = velocity_verlet_step(
             pos,
             vel,
-            topology.masses,
             forces,
-            target_temperature,
-            rng,
-            active_shake_bonds,
+            masses,
+            dt,
             force_fn,
-            preset,
+            thermostat_tau,
+            target_temperature,
+            one_three,
+            bonded_pairs,
+            radii,
+            symbols,
+            bonds,
         )
-        vel = remove_linear_momentum(vel, topology.masses)
-        if preset.reset_ang_mom > 0 and (step + 1) % preset.reset_ang_mom == 0:
-            vel = remove_angular_momentum(pos, vel, topology.masses)
 
-        current_temperature, kinetic, _ = kinetic_temperature(vel, topology.masses)
+        current_temperature, kinetic = kinetic_temperature(vel, masses)
         temperatures.append(float(current_temperature))
         target_temperatures.append(float(target_temperature))
 
         broken_now = detect_broken_bonds(
             pos,
-            topology.bonds,
-            preset.break_frac,
-            preset.break_distance_factor,
+            bonds,
+            radii,
+            symbols,
+            break_factor,
+            alpha,
+            bde_table,
         )
         active = {int(entry["bond_index"]) for entry in broken_now}
         for idx in persist_count:
@@ -136,23 +187,27 @@ def _run_uncached(
         persistent = [
             entry
             for entry in broken_now
-            if persist_count[int(entry["bond_index"])] >= preset.break_persistence
+            if persist_count[int(entry["bond_index"])] >= break_persistence
         ]
 
-        if step % preset.event_every == 0 or step == preset.n_steps - 1:
+        if step % event_every == 0 or step == n_steps - 1:
+            _forces, potential = forces_and_energy(
+                pos, radii, symbols, bonds, one_three, bonded_pairs
+            )
             yield SimulationEvent(
                 "progress",
                 {
                     "step": step,
-                    "n_steps": preset.n_steps,
-                    "progress": round((step + 1) / preset.n_steps, 4),
+                    "n_steps": n_steps,
+                    "progress": round((step + 1) / n_steps, 4),
                     "target_temperature": float(target_temperature),
                     "current_temperature": float(current_temperature),
                     "potential_energy": float(potential),
                     "kinetic_energy": float(kinetic),
                     "candidate_broken_bonds": _format_broken_bonds(
-                        broken_now, topology.symbols
+                        broken_now, symbols
                     ),
+                    "model": _MODEL_NAME,
                 },
             )
 
@@ -165,10 +220,12 @@ def _run_uncached(
                     float(target_temperature),
                     float(current_temperature),
                     persistent,
-                    topology.symbols,
+                    symbols,
                     temperatures,
                     target_temperatures,
                     start,
+                    runtime,
+                    preset,
                 ),
             )
             return
@@ -181,10 +238,12 @@ def _run_uncached(
             None,
             None,
             [],
-            topology.symbols,
+            symbols,
             temperatures,
             target_temperatures,
             start,
+            runtime,
+            preset,
         ),
     )
 
@@ -199,11 +258,19 @@ def _result_payload(
     temperatures: list[float],
     target_temperatures: list[float],
     start_time: float,
+    runtime: dict[str, float | int],
+    preset: SimulationPreset,
 ) -> dict[str, Any]:
+    simulated_break_temperature = (
+        break_temperature
+        if break_temperature is not None
+        else float(runtime["temperature_end"]) + NO_BREAK_MARGIN
+    )
     return {
         "result": result,
         "break_step": break_step,
         "break_temperature": break_temperature,
+        "simulated_break_temperature": simulated_break_temperature,
         "current_break_temperature": current_break_temperature,
         "broken_bonds": _format_broken_bonds(broken_bonds, symbols),
         "symbols": symbols,
@@ -211,6 +278,19 @@ def _result_payload(
         "target_temperatures": target_temperatures,
         "elapsed_seconds": round(time.perf_counter() - start_time, 4),
         "cached": False,
+        "model": _MODEL_NAME,
+        "model_signature": _model_signature(runtime),
+        "preset": preset.name,
+        "parameters": {
+            "temperature_start": float(runtime["temperature_start"]),
+            "temperature_end": float(runtime["temperature_end"]),
+            "n_steps": int(runtime["n_steps"]),
+            "dt": float(runtime["dt"]),
+            "thermostat_tau": float(runtime["thermostat_tau"]),
+            "break_factor": float(runtime["break_factor"]),
+            "break_persistence": int(runtime["break_persistence"]),
+            "alpha": float(runtime["alpha"]),
+        },
     }
 
 
@@ -221,24 +301,101 @@ def _format_broken_bonds(
     for bond in broken_bonds:
         i = int(bond["i"])
         j = int(bond["j"])
+        r0 = bond.get("equilibrium_distance", bond.get("r0"))
         output.append(
             {
                 "atom_i": symbols[i],
                 "atom_j": symbols[j],
                 "atom_i_index": i,
                 "atom_j_index": j,
-                "distance": round(float(bond["distance"]), 3),
-                "r0": round(float(bond["r0"]), 3),
-                "distance_ratio": round(float(bond.get("distance_ratio", 0.0)), 3),
-                "fraction": round(float(bond["V"]) / float(bond["De"]), 3),
-                "De": round(float(bond["De"]), 3),
-                "reason": str(bond.get("reason", "unknown")),
+                "distance": _rounded_or_none(bond.get("distance")),
+                "r0": _rounded_or_none(r0),
+                "threshold": _rounded_or_none(bond.get("threshold")),
+                "bde": _rounded_or_none(bond.get("bde")),
+                "bde_source": str(bond.get("bde_source", "")),
+                "bde_factor": _rounded_or_none(bond.get("bde_factor")),
+                "reason": str(bond.get("reason", "bde_threshold")),
             }
         )
     return output
 
 
-def _cache_get(cache_key: tuple[str, str, int]) -> dict[str, Any] | None:
+def _runtime_params(preset: SimulationPreset) -> dict[str, float | int]:
+    params = _load_optuna_params()
+    return {
+        "temperature_start": TEMPERATURE_START,
+        "temperature_end": TEMPERATURE_END,
+        "n_steps": int(params["n_steps"]),
+        "dt": float(params["dt"]),
+        "thermostat_tau": float(params["thermostat_tau"]),
+        "break_factor": float(params["break_factor"]),
+        "break_persistence": int(params["break_persistence"]),
+        "alpha": float(params["alpha"]),
+        "save_every": SAVE_EVERY,
+        "event_every": max(1, int(preset.event_every)),
+    }
+
+
+def _load_optuna_params() -> dict[str, float | int]:
+    try:
+        with open(_OPTUNA_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+    except OSError as exc:
+        raise SimulationError(f"Arquivo de parâmetros Optuna não encontrado: {exc}") from exc
+
+    params = data.get("best_params", {})
+    required = ["dt", "thermostat_tau", "break_factor", "break_persistence", "alpha", "n_steps"]
+    missing = [key for key in required if key not in params]
+    if missing:
+        raise SimulationError(
+            f"Parâmetros Optuna ausentes em {_OPTUNA_PATH}: {', '.join(missing)}"
+        )
+    return params
+
+
+def _load_bde_table() -> dict:
+    try:
+        return load_bde_table(_BDE_PATH)
+    except Exception as exc:
+        raise SimulationError(f"Falha ao carregar tabela BDE: {exc}") from exc
+
+
+def _model_signature(runtime: dict[str, float | int]) -> str:
+    payload = {
+        "model": _MODEL_NAME,
+        "runtime": runtime,
+        "bde": _file_signature(_BDE_PATH),
+        "optuna": _file_signature(_OPTUNA_PATH),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()[:16]
+
+
+def _file_signature(path: Path) -> dict[str, float | int | str]:
+    try:
+        stat = path.stat()
+    except OSError:
+        return {"path": str(path), "missing": 1}
+    return {
+        "path": str(path),
+        "size": stat.st_size,
+        "mtime_ns": stat.st_mtime_ns,
+    }
+
+
+def _rounded_or_none(value: object, digits: int = 3) -> float | None:
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not np.isfinite(number):
+        return None
+    return round(number, digits)
+
+
+def _cache_get(cache_key: tuple[str, str, int, str]) -> dict[str, Any] | None:
     value = _RESULT_CACHE.get(cache_key)
     if value is None:
         return None
@@ -246,7 +403,7 @@ def _cache_get(cache_key: tuple[str, str, int]) -> dict[str, Any] | None:
     return value
 
 
-def _cache_put(cache_key: tuple[str, str, int], value: dict[str, Any]) -> None:
+def _cache_put(cache_key: tuple[str, str, int, str], value: dict[str, Any]) -> None:
     _RESULT_CACHE[cache_key] = value
     _RESULT_CACHE.move_to_end(cache_key)
     while len(_RESULT_CACHE) > settings.simulation_cache_size:

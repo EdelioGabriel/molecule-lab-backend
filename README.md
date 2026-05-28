@@ -20,14 +20,14 @@ Este repositório é a contraparte de API do projeto `molecule-lab-frontend`.
 - Validação de grafos moleculares enviados pelo frontend.
 - Conversão de grafo para molécula RDKit e SMILES canônico.
 - Cálculo de fórmula molecular, massa molecular e propriedades estáticas.
-- Simulação qualitativa com presets `fast`, `balanced` e `debug`.
+- Simulação qualitativa BDE/ranking com parâmetros calibrados por Optuna.
 - Streaming de progresso por SSE com eventos de metadata, progresso, cache e resultado.
-- Cache em memória para resultados determinísticos repetidos.
+- Cache em memória para resultados determinísticos repetidos por molécula, preset, seed e versão dos dados BDE/Optuna.
 - Testes para química, simulação e fluxo HTTP/SSE.
 
 ## Escopo Científico
 
-Esta é uma simulação educacional para explorar tendências qualitativas. O modelo usa geometria inicial ETKDG/UFF, cargas Gasteiger, potenciais simplificados de Morse, ângulos, diedros, Lennard-Jones, Coulomb, integrador BAOAB e SHAKE/RATTLE em ligações com hidrogênio.
+Esta é uma simulação educacional para explorar tendências qualitativas. O modelo integrado usa geometria inicial ETKDG/UFF, ligações harmônicas, repulsão WCA, integrador Velocity Verlet com termostato de Berendsen, rampa de temperatura e detecção de quebra calibrada por tabela BDE e parâmetros Optuna.
 
 Os resultados não devem ser usados como previsão experimental de alta fidelidade. O objetivo é apoiar interação didática, visualização de possíveis quebras e comparação qualitativa entre moléculas pequenas.
 
@@ -148,7 +148,7 @@ O endpoint retorna `text/event-stream` com os seguintes eventos:
 
 - `metadata`: dados da simulação e da molécula.
 - `progress`: passo atual, progresso, temperatura e energia.
-- `cache_hit`: resultado recuperado do cache em memória.
+- `cache_hit`: resultado recuperado do cache em memória para a mesma molécula, preset, seed e versão dos dados BDE/Optuna.
 - `result`: resultado final `stable` ou `break`.
 - `error`: erro estruturado com `code` e `message`.
 
